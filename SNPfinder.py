@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
 Created on Tue Oct 27 15:59:28 2015
@@ -11,12 +12,11 @@ Created on Tue Oct 27 15:59:28 2015
 
 def NucleotideBlast(query, subject, output):
     from os import system
-    """This function simply runs blast.
-    I prefer the syntax of this over NCBI's python module"""
-    system("blastn -query " + query + " -subject " + subject + \
+    """Using a query from stdin blasts against a subject"""
+    system("blastn -query " + query + " -subject " + subject + 
     " -outfmt 5 >> " + output) #Outfmt 5 specifices xml output
-    print query + " vs " + subject + "Blast Done"
-    return 0
+    return 
+
     
 def BestHitblastn(query, subject, output): 
     from os import system
@@ -24,7 +24,6 @@ def BestHitblastn(query, subject, output):
     I prefer the syntax of this over NCBI's python module"""
     system("blastn -query " + str(query) + " -subject " + str(subject) + \
     " -outfmt 6 -max_target_seqs 1 > " + str(output)) #Outfmt 6 specifices tsv output
-    print str(query) + " vs " + str(subject) + "Blast Done"
     return 0
     
 def AllGenomeBlast(query, GenomeDir, output):
@@ -32,7 +31,8 @@ def AllGenomeBlast(query, GenomeDir, output):
     """Uses the previous blast function to blast query against all 
     subject genomes in a directory"""
     for genome in listdir(GenomeDir):
-        NucleotideBlast(query, GenomeDir + '/' + genome, output)
+        NucleotideBlast(query, GenomeDir +'/'+ genome, output)
+        print "Blast " +query+ " vs " +genome+ " successfull"
     return 0
 
 ###############################################################################
@@ -87,8 +87,6 @@ def ParaOrOrtho(blastfile, singlehitdata, referenceGenome, tmpseqfile, tmpblastf
     os.system('rm ' + tmpseqfile)
     bestblasthit = GetBlastRef(tmpblastfile)
     os.system('rm ' + tmpblastfile)
-    print bestblasthit[0][1]
-    print os.path.basename(blastfile)
     return os.path.basename(blastfile) == bestblasthit[0][1]    
     
     
@@ -99,7 +97,6 @@ def snpsNseqs(singlehitdata, singlehitindex, alignment_end, blastfile, reference
     """In order to produce good sequences for alignments the sequences must be gapped
     to include gaps at the beginning of the sequence"""
     if ParaOrOrtho(blastfile, singlehitdata, referenceGenome, tmpseqfile, tmpblastfile):
-        print 'Ortholog'
         cntgbpcounter = 1
         algnbpcounter = singlehitdata.query_start
         SNPList = []
@@ -124,12 +121,12 @@ def snpsNseqs(singlehitdata, singlehitindex, alignment_end, blastfile, reference
                 OutSeq.append(jj)
                 algnbpcounter += 1
                 cntgbpcounter += 1
+        
         if SNPList == []: # Adds entry to contig if no SNPs are found, this allows it to still be used to index with later
             SNPList.append([singlehitindex,0,0,0,0,singlehitdata.query_start, singlehitdata.query_end,singlehitdata.sbjct_start,singlehitdata.sbjct_end])
         for ii in '-' * (int(alignment_end) - singlehitdata.query_end):
             OutSeq.append(ii)
         return OutSeq, SNPList
-    print 'Paralog'
     return 'Paralog', 'Paralog'
  
            
@@ -138,14 +135,20 @@ def snpsNseqs4wholeblast(blastfile, referenceGenome, tmpseqfile, tmpblastfile):
     """ Does snpsNseqs for every hit in a blast file"""
     from numpy import array
     import os
+    hitcounter = 1
     hitindex, hitdata = GetBlast(blastfile)
     fullSeq = []
     fullSNP = []
     for ii,jj in zip(hitdata, hitindex):
         tmpSeq, tmpSNP = snpsNseqs(ii, jj, os.path.basename(blastfile).split('_')[-1], blastfile, referenceGenome, tmpseqfile, tmpblastfile)
         if tmpSeq != 'Paralog':
+            print "hit " + str(hitcounter) + ": Ortholog"
             fullSeq.append(tmpSeq)
             fullSNP.append(tmpSNP)
+            hitcounter += 1
+        else:
+            print "hit " + str(hitcounter) + ": Paralog"
+            hitcounter += 1
     return array(fullSeq), fullSNP
     
 
@@ -170,11 +173,13 @@ def SNPfilter(SNPlist, seqarray, outfile):
                     if len(unique(tmp)) == 1:
                         goodSNP.append(jj)
     f = open(outfile, 'w')
+    outSNP = []
     for ii in goodSNP:
         if ii[1] != 0:
             writer(f).writerow(ii)
+            outSNP.append(ii)
     f.close()
-    return goodSNP
+    return outSNP
                     
 
 def ExtractHitMain(blastfile, reference, outdir, tmpseqfile, tmpblastfile):
@@ -182,11 +187,11 @@ def ExtractHitMain(blastfile, reference, outdir, tmpseqfile, tmpblastfile):
     
         
     seqarray, seqindex = snpsNseqs4wholeblast(blastfile, outdir + '/AllGenes.fasta', tmpseqfile, tmpblastfile)
-    print 'blast file parsed'
+    print 'blast file ' +os.path.basename(blastfile)+  ' parsed'
     writefasta(seqarray, seqindex, outdir + '/Alignments/' + os.path.basename(blastfile) + '.fasta')
-    print 'fasta written'
+    print 'fasta ' +os.path.basename(blastfile)+ '.fasta written'
     goodSNPs = SNPfilter(seqindex, seqarray, outdir + '/SNPs/' + os.path.basename(blastfile) + '.csv')
-    print 'SNPs identified'
+    print str(len(goodSNPs)) + ' SNPs identified'
     return goodSNPs
 
 
@@ -306,6 +311,7 @@ def SetFastaHeader(infasta, outdir):
 
 def splitgenome(Genome, window, outdir):
     from Bio import SeqIO
+    outsplit = []
     for contig in GetFasta(Genome):
         counter = 0
         while len(contig) - counter > 1.5*window: # Prevents the last window being smaller than half a window
@@ -316,6 +322,7 @@ def splitgenome(Genome, window, outdir):
             SeqIO.write(tmp, outfile, 'fasta')
             outfile.close()
             counter += window
+            outsplit.append(tmp)
             
         tmp = contig[counter:len(contig)]
         tmp.id = contig.id + '_' + str(counter+1) + '_' + str(len(contig))
@@ -323,6 +330,8 @@ def splitgenome(Genome, window, outdir):
         outfile = open(outdir + tmp.id, 'w') # Change dir to user input
         SeqIO.write(tmp, outfile, 'fasta')
         outfile.close()
+        outsplit.append(tmp)
+    return outsplit
 
 ###############################################################################
 # Coverage Functions ##########################################################
@@ -330,22 +339,29 @@ def splitgenome(Genome, window, outdir):
 
 
 def extractcov(Genome, Contig, Pos, tmpfile, extrapos=10):
+    """Fast method of getting coverage areas of interest in a file, faster than iterating
+    over whole coverage map in python"""
     from csv import reader
     import os
     for ii in range(-int(int(extrapos)/2), int(int(extrapos)/2 + 1)):
 
+    #    os.system("awk 'lines>0 {print; --lines} /contig_" + Contig + "\t" + str(int(Pos)-extrapos/2) + "\t/ {lines=" + str(extrapos/2) + "}' " + Genome)  
+    
+    
         os.system('cat ' + Genome + ' | grep -P "contig_' + Contig + '\t' + str(int(Pos)+ii) +'\t" >> ' + tmpfile)    
     CntgCov = [line for line in reader(open(tmpfile), delimiter='\t')]
+    print len(CntgCov)
     os.system('rm ' + tmpfile)
     return CntgCov
 
 
-def GetCov(SNPdat, CovDir, outfile, tmpfile, extrapos=10):
+def GetCov(SNPdat, CovDir, outfile, tmpfile, extrapos=10, mincov=1):
     import re
     import os
-    from csv import writer
+    from csv import writer, reader
     CovList = []
-    for SNP in SNPdat:
+    for SNP in [line for line in reader(open(SNPdat))]:
+        print SNP
 
         genome = [x for x in os.listdir(CovDir) if re.search(SNP[0].split('_')[0], x)]
         fulltmp = extractcov(CovDir + '/' + genome[0], SNP[0].split('_')[-1], SNP[4], tmpfile, extrapos)
@@ -354,20 +370,25 @@ def GetCov(SNPdat, CovDir, outfile, tmpfile, extrapos=10):
             if int(ii[1]) != int(SNP[4]):
                 extrapostmp.extend([ii[4],ii[5]])
             else:
-                actualpostmp = ii
-            
-        actualpostmp.extend(extrapostmp)
-
-        
-        CovList.append(actualpostmp)
+                if int(ii[3]) >= mincov:
+                    actualpostmp = ii
+                else:
+                    break
+        try:
+            actualpostmp.extend(extrapostmp)
+            CovList.append(actualpostmp)
+        except NameError:
+            print "SNP coverage too low or zero"
+            pass
                 
                         
 
-    print CovList
+    output = open(outfile, 'w')
     for line in CovList:
-        print line
+        
         if line != []:
-            writer(open(outfile, 'a')).writerow(line)
+            writer(output).writerow(line)
+    output.close()
     return CovList
 
 
@@ -385,22 +406,23 @@ def GetCov(SNPdat, CovDir, outfile, tmpfile, extrapos=10):
 # Main Function ###############################################################
 ###############################################################################
 
-def SNPfinder(Gene, GenomeDir, FullReference, OutDir, tmpseqfile, tmpblastfile, CovDir, extrapos):
+def SNPfinder(Gene, GenomeDir, FullReference, OutDir, tmpseqfile, tmpblastfile, CovDir, extrapos, mincov=1):
     import os
     import time
     
-    print "Beginning Blast "
+    print "Beginning SNPfinder for gene: " + Gene
+    print "Blastn " + Gene + " vs subject genomes"
     strttime = time.time()
     AllGenomeBlast(Gene, GenomeDir, OutDir + '/' + os.path.basename(Gene))
-    print "Blasting finished, time taken: " + str(time.time()-strttime)
+    print "Blastn finished, time taken: " + str(time.time()-strttime)
     print "Starting hit extraction and SNP identification"
     midtime = time.time()
-    goodSNPs = ExtractHitMain(OutDir + '/' + os.path.basename(Gene), FullReference, OutDir, tmpseqfile, tmpblastfile)
+    ExtractHitMain(OutDir + '/' + os.path.basename(Gene), FullReference, OutDir, tmpseqfile, tmpblastfile)
     print "Hits extracted, time taken: " + str(time.time() - midtime)
     os.system('rm ' + OutDir + '/' + os.path.basename(Gene))
     print "Starting SNP coverage extraction"
     midtime = time.time()
-    GetCov(goodSNPs, CovDir, OutDir + '/SNPCov/' + os.path.basename(Gene) + '.csv'  , OutDir + '/' + os.path.basename(Gene), extrapos)
+    GetCov(OutDir + '/SNPs/' + os.path.basename(Gene) + '.csv', CovDir, OutDir + '/SNPCov/' + os.path.basename(Gene) + '.csv'  , OutDir + '/' + os.path.basename(Gene), extrapos, mincov)
     print "SNP coverage extracted, time taken " + str(time.time() - midtime)
     print "Total time taken: " + str(time.time() - strttime)
 
@@ -458,6 +480,13 @@ if __name__ == '__main__':
     
     # Optional input of -cpus
     
+    if len(sysarray[sysarray == '-minc']) > 0:
+        try:
+            mincov = int(sysarray[nonzero(sysarray == '-minc')[0] + 1][0])
+        except IndexError:
+            "Incorrect split size provided, please input -split ####"
+    else:
+        mincov = 1
     
     
     
@@ -501,7 +530,7 @@ if __name__ == '__main__':
         
     
     
-    GenomeDir = sys.argv[nonzero(sysarray == '-assemblies')[0] + 1]
+    GenomeDir = sys.argv[nonzero(sysarray == '-g')[0] + 1]
     
     
     
@@ -569,14 +598,10 @@ if __name__ == '__main__':
     
     geneins = os.listdir(OutDir + '/SplitGenome')
 
-    
     while len(geneins) > 0:
-        print len(geneins)
-        print geneins[0:2]
-        
         #print cpus
         #print range(cpus)
-        processes = [mp.Process(target=SNPfinder, args=(OutDir + '/SplitGenome/' + str(geneins[x]), GenomeDir, RefGenome, OutDir, OutDir + '/tmpseqfile' + str(x), OutDir + '/tmpblastfile' + str(x), CovDir, extrapos)) for x in range(cpus)]
+        processes = [mp.Process(target=SNPfinder, args=(OutDir + '/SplitGenome/' + str(geneins[x]), GenomeDir, RefGenome, OutDir, OutDir + '/tmpseqfile' + str(x), OutDir + '/tmpblastfile' + str(x), CovDir, extrapos, mincov)) for x in range(cpus)]
         #print processes
         #print len(processes)
         geneins = geneins[2:]
